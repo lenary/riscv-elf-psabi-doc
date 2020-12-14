@@ -1,0 +1,188 @@
+= RISC-V ELF psABI Specification
+v0.0, 2020-12-14
+:toc:
+:numbered:
+
+////
+SPDX-License-Identifier: CC-BY-4.0
+////
+
+== Introduction
+
+This specification describes the processor-specific definitions for ELF for the
+Application Binary Interface (ABI) for the RISC-V Architecture.
+
+=== Latest Version and Issue Tracker
+
+Please check https://github.com/riscv/riscv-elf-psabi-doc/blob/master/riscv-elf.md[the RISC-V ELF psABI Specification] for the latest version of this specification.
+
+Please report any defects in this specification to the https://github.com/riscv/riscv-elf-psabi-doc/issues[issue tracker page on GitHub].
+
+
+=== Licence
+
+This work is licenced under the Creative Commons Attribution 4.0 International Licence (CC-BY 4.0). The full licence text is available at https://creativecommons.org/licenses/by/4.0/.
+
+=== Copyright
+
+The RISC-V ELF psABI Specification is:
+
+[%hardbreaks]
+(C) 2016 Palmer Dabbelt <palmer@dabbelt.com>
+(C) 2016 Stefan O'Rear <sorear2@gmail.com>
+(C) 2016 Kito Cheng <kito.cheng@gmail.com>
+(C) 2016-2017 Andrew Waterman <aswaterman@gmail.com>
+(C) 2016-2017 Michael Clark <michaeljclark@mac.com>
+(C) 2017-2019 Alex Bradbury <asb@asbradbury.org>
+(C) 2017 David Horner <ds2horner@gmail.com>
+(C) 2017 Max Nordlund <max.nordlund@gmail.com>
+(C) 2017 Karsten Merker <merker@debian.org>
+(C) 2019 Sam Elliott <selliott@lowrisc.org>
+
+=== References
+
+.References
+|===
+| Ref  | URL | Title
+| GABI | http://www.sco.com/developers/gabi/2003-12-17/contents.html | System V Application Binary Interface
+| RISCV | https://riscv.org/technical/specifications/ | RISC-V ISA Specification
+|===
+
+=== Scope
+
+This specification provides the processor-specific definitions required by ELF for RISC-V based systems.
+
+The ELF specification is part of the larger System-V ABI specification, where it forms chapters 4 and 5. However, the specification can be used in isolation as a generic object and executable format.
+
+<<object_files>> corresponds to Chapter 4 of the ELF specification, covering object files and relocations.
+
+<<program_loading>> corresponds to Chapter 5 of the ELF specification, covering program loading and dynamic linking.
+
+[#object_files]
+== Object Files
+
+=== File Header
+
+The following field values are used for RISC-V, in addition to those specified in the base standard.
+
+* `e_ident`:
+  The 16-byte ELF Identification (`e_ident`) provides information on how to iterpret the file itself. The following values shall be used on RISC-V systems
+
+** `EI_CLASS`:
+   This specification uses `EI_CLASS` to identify the base ISA, either RV32 or RV64.
+   A linker must not link RV32 and RV64 object files to each other.
+
+*** `ELFCLASS32`: Identifies an object file for the RV32 Base ISA.
+*** `ELFCLASS64`: Identifies an object file for the RV64 Base ISA.
+
+* `e_type`:
+  There are currently no RISC-V-specific object file types.
+  All values between `ET_LOPROC` and `ET_HIPROC` are reserved for future revisions of this specification.
+
+* `e_machine`:
+  An object file conforming to this specification must have value `EM_RISCV` (243).
+
+* `e_flags`:
+  The processor-specific flags are shown in <<riscv_e_flags>>. These flags
+  are used to disallow linking ELF Object files with incompatible ABIs together.
+
+[#riscv_e_flags]
+.RISC-V Specific Flags `e_flags`
+|===
+| Value | Meaning
+| `EF_RISCV_RVC` (0x0001)
+| This bit is set when the binary targets the C ABI,
+  which allows instructions to be aligned to 16-bit boundaries (the base RV32
+  and RV64 ISAs only allow 32-bit instruction alignment).  When linking
+  objects which specify EF_RISCV_RVC, the linker is permitted to use RVC
+  instructions such as C.JAL in the relaxation process.
+| `EF_RISCV_FLOAT_ABI` (0x0006)
+| This masks a 2-bit value which identifies which floating-point calling
+  convention is in use for this ELF file.
+
+  The value represents the largest floating-point type which ends up in
+  registers as part of the calling convention. All floating-point types smaller
+  than this type also end up in registers.
+
+  For example, `EF_RISCV_FLOAT_ABI_DOUBLE` implies that all `float` and `double`
+  values are passed in floating-point registers.
+
+  Values here correspond to specific values of `FLEN` as given in the
+  description of the calling convention.
+
+  This does not control if code generation is allowed to use floating-point
+  registers internally.
+
+  Allowable values are `EF_RISCV_FLOAT_ABI_SOFT`, `EF_RISCV_FLOAT_ABI_SINGLE`,
+  `EF_RISCV_FLOAT_ABI_DOUBLE` and `EF_RISCV_FLOAT_ABI_QUAD`.
+| `EF_RISCV_FLOAT_ABI_SOFT` (0x00000000)
+| No floating-point types are passed in registers. The calling convention's
+`FLEN` is 0. See Also: `EF_RISCV_FLOAT_ABI`.
+| `EF_RISCV_FLOAT_ABI_SINGLE` (0x00000002)
+| Single-precision and smaller floating-point types are passed in registers. The calling convention's `FLEN` is 32. See Also: `EF_RISCV_FLOAT_ABI`.
+| `EF_RISCV_FLOAT_ABI_DOUBLE` (0x00000004)
+| Double-precision and smaller floating-point types are passed in registers. The calling convention's `FLEN` is 64. See Also: `EF_RISCV_FLOAT_ABI`.
+| `EF_RISCV_FLOAT_ABI_QUAD` (0x00000006)
+| Quad-precision and smaller floating-point types are passed in registers. The calling convention's `FLEN` is 128. See Also: `EF_RISCV_FLOAT_ABI`.
+| `EF_RISCV_RVE` (0x00000008)
+| The ELF file contains code which uses the E (Embedded) Calling Convention.
+| `EF_RISCV_TSO` (0x00000010)
+| The ELF file contains code which requires the RVTSO memory consistency model.
+| `EF_RISCV_CUSTOM_EXTENSION_MASK` (0xFF000000)
+| These bits are reserved for non-standard extensions.
+
+  Software must not set these bits, and must not link ELF files where these bits
+  are non-zero.
+|===
+
+=== Sections
+
+==== Special Section Indexes
+
+There are no processor-specific special section indexes defined. All
+processor-specific values are reserved for future revisions of this
+specification.
+
+==== Section Types
+
+The defined procesor-specific section types are listed in <<riscv_sh_type>>. All
+other processor-specific values are reserved for future revisions of this
+specification.
+
+[#riscv_sh_type]
+.RISC-V Specific Section Types `sh_type`
+|===
+| Value | Meaning
+| `SHT_RISCV_ATTRIBUTES` (0x70000003) | Object file compatibility attributes. See <<compatibility_attributes>>.
+|===
+
+==== Section Attribute Flags
+
+There are no processor-specific section attribute flags defined. All
+processor-specific values are reserved for future revisions of this
+specification.
+
+==== Special Sections
+
+<<riscv_special_section_names>> lists the special sections defined by this ABI.
+Other names beginning `.RISCV.` are reserved for future revisions of this
+specification.
+
+[#riscv_special_section_names]
+.RISC-V Special Sections
+|===
+| Name | Type | Attributes | Meaning
+|===
+
+==== Section Alignment
+
+
+[#compatibility_attributes]
+==== Compatibility Attributes
+
+
+
+
+
+
+// [#program_loading]

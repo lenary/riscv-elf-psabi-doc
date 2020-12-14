@@ -1,0 +1,434 @@
+--------------------------------------------------------------------------
+RISC-V FDPIC ELF psABI Addendum
+
+
+Chapter 4 Object Files
+
+4.1 Machine Information (normative)
+
+A bit in the `e_flags' member of the ELF header shall identify, when set,
+a file that conforms to this ABI:
+
+#define EF_RISCV_FDPIC 0x0010
+
+
+4.2 Relocation Types (normative)
+
+The following relocation types have been defined to support this ABI.
+
+Figure 4.1 Relocatable Fields, Relocated Bits Marked With X's
+
+15  12           0 15               0
++----+-----------+ +----------------+
+|XXXX|           | |XXXXXXXXXXXXXXXX|
++----+-----------+ +----------------+
+   hi20[15:12]        hi20[31:16]
+
+15               0 15           4   0
++----------------+ +------------+---+
+|                | |XXXXXXXXXXXX|   |
++----------------+ +------------+---+
+                       lo12i[11:0]
+
+15  11    7      0 15      9        0
++---+-----+------+ +-------+--------+
+|   |XXXXX|      | |XXXXXXX|        |
++---+-----+------+ +-------+--------+
+    lo12s[4:0]         lo12s[11:5]
+
+31                               0
++--------------------------------+
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
++--------------------------------+
+           word32[31:0]
+
+15  12           0 15               0 15               0 15           4   0
++----+-----------+ +----------------+ +----------------+ +------------+---+
+|XXXX|           | |XXXXXXXXXXXXXXXX| |                | |XXXXXXXXXXXX|   |
++----+-----------+ +----------------+ +----------------+ +------------+---+
+ hi20lo12i[15:12]   hi20lo12i[31:16]                       hi20lo12i[11:0]
+
+63                                                               0
++----------------------------------------------------------------+
+|XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX|
++----------------------------------------------------------------+
+                           word64[63:0]
+
+Note: For the value inserted into these fields T specifies truncation and
+V specifies a signed overflow check on a relocation by relocation basis.
+In the T case any high-order bits that extend beyond the width of the
+field and are not equal to the highest-order bit that still fits are
+silently ignored.  In the V case the presence of such high-order bits
+causes the static linker to produce a link error.
+
+Table 4.1 Relocation Operands
+
+ Operand | Description
+=========+================================================================
+ A       | Relocation addend.
+---------+----------------------------------------------------------------
+ DBA     | Data segment's base address; 0 in static link.
+---------+----------------------------------------------------------------
+ G       | The offset from GP of a GOT entry for the symbol referred by
+         | the relocation.
+---------+----------------------------------------------------------------
+ GP      | The value of GP associated with the symbol referred, nominally
+         | (DVMA + DBA + 2048).
+---------+----------------------------------------------------------------
+ P       | The place (offset or address) of the storage unit affected by
+         | the relocation. 
+---------+----------------------------------------------------------------
+ PLTE    | The address of a PLT entry associated with the symbol referred.
+---------+----------------------------------------------------------------
+ PLTI    | The address of a PLT entry designated to make indirect calls.
+---------+----------------------------------------------------------------
+ S       | The value of the symbol referred by the relocation.
+---------+----------------------------------------------------------------
+ TBA     | Text segment's base address; 0 in static link.
+
+Table 4.2 Relocation Types
+
+ Name                     | Value |    Field    |  Symbol   | Calculation
+==========================+=======+=============+===========+=============
+ R_RISCV_RELATIVE         |    3  | T-word32,64 |    n/a    | TBA + A
+ R_RISCV_REL_TEXT (alias) |       |             |           |
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GP               |   12  | T-word32,64 |    any    | GP
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_REL_DATA         |   13  | T-word32,64 |    n/a    | DBA + A
+==========================+=======+=============+===========+=============
+                          |       |             |   local   | S - P
+ R_RISCV_CALL_PLT         |   19  | V-hi20lo12i |  external | PLTE - P
+                          |       |             |    n/a    | PLTI - P
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GPREL_HI20       |   59  | V-hi20      |   local   | S - GP + A
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GPREL_LO12_I     |   60  | T-lo12i     |   local   | S - GP + A
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GPREL_LO12_S     |   61  | T-lo12s     |   local   | S - GP + A
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GPREL_GOT_HI20   |   62  | V-hi20      |    any    | G
+--------------------------+-------+-------------+-----------+-------------
+ R_RISCV_GPREL_GOT_LO12_I |   63  | T-lo12i     |    any    | G
+
+Local symbols are never preempted and therefore they can be addressed
+with relative addressing in PIC code.  For text symbols PC-relative
+addressing can be used both in ordinary PIC and FDPIC code and therefore
+the same relocations are used in both cases.
+
+PC-relative addressing cannot however be used in FDPIC code for data
+symbols as the relative position of text and data with respect to each
+other is not fixed and therefore a separate global pointer (GP) has to be
+maintained.  This ABI designates the x3 register to hold the value of the
+GP and defines gp as an alias ABI name of this register.  This register
+is used to access local data using direct GP-relative addressing.
+
+The R_RISCV_GPREL_HI20, R_RISCV_GPREL_LO12_I and R_RISCV_GPREL_LO12_S
+static relocations are defined to support direct GP-relative addressing
+suitable for local data access.
+
+External symbols can be preempted and therefore have to be addressed
+indirectly.  The Global Offset Table (GOT) is used to hold the addresses
+of external data symbols.  GOT itself is local data and can therefore be
+accessed with GP-relative addressing.
+
+The R_RISCV_GPREL_GOT_HI20 and R_RISCV_GPREL_GOT_LO12_I static
+relocations are defined to support indirect GP-relative addressing
+suitable for external data access.
+
+Occasionally a GOT entry will be created for local data to satisfy the
+use of R_RISCV_GPREL_GOT_HI20 and R_RISCV_GPREL_GOT_LO12_I relocations in
+code referring to such data.  The R_RISCV_REL_DATA dynamic relocation is
+defined to support GP-relative relocation of such GOT entries at program
+load time.
+
+
+4.3 Procedure Calls (normative)
+
+Local procedure calls use the same code sequence as with ordinary PIC
+code.  PC-relative addressing can be used as all code locations are fixed
+with respect to each other and the address is not interpreted beyond
+making the jump itself.  GP does not change in the process of making a
+local procedure call as control remains in the same module.
+
+External calls need to set the PC and the GP both at a time.  This is
+because external symbols can be preempted, in which case a call will pass
+control to another module, which will usually require access to its local
+data.
+
+A data structure called Function Descriptor Table (FDT) is created by the
+static linker to hold PC/GP pairs used in external procedure calls.
+Addresses of individual FDT entries serve as pointers to the respective
+procedures.  An FDT entry is therefore created for each function symbol
+that is external, whether defined or not, or whose address is taken for
+a purpose other than making a call.
+
+As the ultimate values of the PC and the GP are only determined at load
+time the static linker attaches dynamic relocations to data in the FDT.
+For external function symbols the R_RISCV_JUMP_SLOT and R_RISCV_GP
+relocations are used for the PC and GP respectively, both referring to
+the function symbol.  For local function symbols whose address is taken
+the R_RISCV_REL_TEXT and R_RISCV_GP relocations are used with no symbol
+referred.
+
+Figure 4.2 Function Description Table
+
+                               FDT          Outstanding dynamic relocations
+__riscv_fdt_func1 ---> +------------------+
+                       |  Text Pointer 1  |    R_RISCV_JUMP_SLOT  func1
+                       +------------------+
+                       | Global Pointer 1 |    R_RISCV_GP         func1
+__riscv_fdt_func2 ---> +==================+
+                       |  Text Pointer 2  |    R_RISCV_JUMP_SLOT  func2
+                       +------------------+
+                       | Global Pointer 2 |    R_RISCV_GP         func2
+__riscv_fdt_func3 ---> +==================+
+                       |  Text Pointer 3  |    R_RISCV_REL_TEXT
+                       +------------------+
+                       | Global Pointer 3 |    R_RISCV_GP
+                       +==================+
+                       |      . . .       |
+
+A Procedure Linkage Table (PLT) is created to handle calls via the FDT,
+so that the same code sequence is used in the program proper to make
+direct procedure calls regardless of whether the function symbol called
+is local or external.  Since the PLT is local to the module its entries
+can be reached with PC-relative addressing.  Individual PLT entries are
+created and called into for each external procedure called.
+
+For direct calls an FDT entry is used that corresponds to the procedure
+called and has been created in the module making the call.  Therefore
+code in the PLT can access the FDT entry directly as local data, using
+GP-relative addressing.
+
+For indirect calls the PLT is also used and an FDT entry is used that
+corresponds to the procedure called and has been created in the module
+providing the function symbol of the procedure.
+
+If a function symbol is local, then the GP-relative address of the FDT
+entry is directly used by the static linker as the value retrieved in
+taking a function's address.
+
+If a function symbol is external, then an external dynamic data symbol is
+created that refers to that FDT entry and whose name is constructed by
+prepending `__riscv_fdt_' to the function's symbol name.
+
+If the address of an external function symbol is taken, then a GOT entry
+is created for the corresponding `__riscv_fdt_' dynamic data symbol and
+used to satisfy the reference.
+
+When making an indirect call a dedicated PLT entry is used that is common
+to all indirect calls and upon invocation of that PLT entry the x5 (t0)
+register holds the address of the FDT entry in the module providing the
+function symbol of the procedure to call.
+ 
+Since the GP is different for each module the value held in the x3 (gp)
+register can change in the course of making a procedure call.  Therefore
+under the FDPIC calling convention the x3 (gp) register is considered
+call-clobbered and it has to be preserved by the caller when making a
+call to an external function symbol unless it is known that the call does
+not return or that the GP is no longer referred after the return from the
+procedure called.  A stack slot has to be typically allocated and
+initialized in a function's prologue to preserve the x3 (gp) register
+across calls.
+
+
+4.4 Typical Code Sequences (informative)
+
+In the sequences below expressions on the right-hand side of relocation
+names denote the symbol and the addend specified with the relocation.  In
+the absence of a `+' operator only a symbol is specified, otherwise the
+left-hand side of the addition is a symbol and the right-hand side is an
+addend.  If a symbol is specified as `*ABS*', then the value is 0 (the
+symbol index is STN_UNDEF in the relocation).  The value of ABS() is the
+absolute (static-link-time) value of the expression in the parentheses.
+
+4.4.1 Local Data Addressing
+
+Ordinary PIC code, using PC-relative addressing:
+
+                                       # Outstanding static relocations
+label:
+  auipc  t0, %pcrel_hi(var+addend)     # R_RISCV_PCREL_HI20       var+addend
+  lbu    t1, %pcrel_lo(label)(t0)      # R_RISCV_PCREL_LO12_I     label
+  sb     t2, %pcrel_lo(label)(t0)      # R_RISCV_PCREL_LO12_S     label
+
+Corresponding FDPIC code, using GP-relative addressing:
+
+                                       # Outstanding static relocations
+  lui   t0, %gprel_hi(var+addend)      # R_RISCV_GPREL_HI20       var+addend
+  c.add t0, gp
+  lbu   t1, %gprel_lo(var+addend)(t0)  # R_RISCV_GPREL_LO12_I     var+addend
+  sb    t2, %gprel_lo(var+addend)(t0)  # R_RISCV_GPREL_LO12_S     var+addend
+
+
+4.4.2 External Data Addressing
+
+Ordinary PIC code, using GOT and PC-relative addressing:
+
+                                       # Outstanding static relocations
+label:
+  auipc  t0, %pcrel_got_hi(var)        # R_RISCV_GOT_HI20         var
+  l[w|d] t0, %pcrel_lo(label)(t0)      # R_RISCV_PCREL_LO12_I     label
+  lb     t1, addend(t0)
+  sb     t2, addend(t0)
+
+  # Outstanding dynamic relocations for the GOT entry
+  #                      R_RISCV_32,64      var
+
+  # or if the data symbol turns out local at static link time
+  #                      R_RISCV_REL_DATA   *ABS*+ABS(var)
+
+Corresponding FDPIC code, using GOT and GP-relative addressing:
+
+                                       # Outstanding static relocations
+  lui    t0, %gprel_got_hi(var)        # R_RISCV_GPREL_GOT_HI20   var
+  c.add  t0, gp
+  l[w|d] t0, %gprel_got_lo(var)(t0)    # R_RISCV_GPREL_GOT_LO12_I var
+  lbu    t1, addend(t0)
+  sb     t2, addend(t0)
+
+  # Outstanding dynamic relocations for the GOT entry
+  #                      R_RISCV_32,64      var
+
+  # or if the function turns out local at static link time
+  #                      R_RISCV_REL_DATA   *ABS*+ABS(var)
+
+
+4.4.3 Taking a Function's Address
+
+FDPIC code, local function:
+
+                                       # Outstanding static relocations
+  lui   t0, %gprel_hi(fun)             # R_RISCV_GPREL_HI20       fun
+  c.add t0, gp
+  addi  t1, t0, %gprel_lo(fun)         # R_RISCV_GPREL_LO12_I     fun
+
+FDPIC code, external function:
+
+                                       # Outstanding static relocations
+  lui    t0, %gprel_got_hi(fun)        # R_RISCV_GPREL_GOT_HI20   fun
+  c.add  t0, gp
+  addi   t1, t0, %gprel_got_lo(fun)    # R_RISCV_GPREL_GOT_LO12_I fun
+
+  # Outstanding dynamic relocations for the GOT entry
+  #                      R_RISCV_32,64      __riscv_fdt_fun
+
+  # or if the function symbol turns out local at static link time
+  #                      R_RISCV_REL_DATA   *ABS*+ABS(__riscv_fdt_fun)
+
+
+4.4.4 Procedure Calls Using the PLT
+
+FDPIC code, direct call:
+
+                                       # Outstanding static relocations
+label:
+  auipc  ra, %pcrel_call_hi(fun@PLT)   # R_RISCV_CALL_PLT         fun
+  jalr   ra, ra, %pcrel_call_lo(label)
+  l[w|d] gp, <gp_slot>(sp)
+
+FDPIC code, indirect call (to a2):
+
+                                       # Outstanding static relocations
+  c.mv   t0, a2
+label:
+  auipc  ra, %pcrel_call_hi(@PLT)      # R_RISCV_CALL_PLT
+  jalr   ra, ra, %pcrel_call_lo(label)
+  l[w|d] gp, <gp_slot>(sp)
+
+  # The R_RISCV_CALL_PLT relocation with no symbol referred resolves to
+  # the PLT entry associated with indirect calls.
+
+
+Chapter 5 Program Loading
+
+5.1 Base Addresses (normative)
+
+A single individual base address is defined by the ELF gABI for a module
+being loaded that determines the amount to relocate the module by.  This
+is unsuitable for FDPIC modules, which need to have their text segments
+and data segments mapped in memory separately.  This is so that where a
+module is mapped multiple times in a no-MMU system, only a single copy of
+its text segments is present in memory and serves all the mappings, while
+a separate copy of its data segments is present in memory for each of the
+mappings.  Consequently the distance between text and data segments is no
+longer constant between mappings and there is no single base address.
+
+Instead a separate text base address and a data base address is defined
+as a difference between the load address and the link address of the text
+segment and the data segment respectively.  These two base addresses are
+used by the dynamic loader to relocate text and data respectively.
+
+In the initial module, such as a program interpreter, loaded by an OS or
+other executive runtime the text base address of said initial module can
+be determined by calculating a run-time difference between the actual
+value of the PC for a given location, such as the beginning of the text
+segment, obtained with a PC-relative reference to a symbol associated
+with that location and the value of a corresponding absolute symbol
+associated with the same location.  The way to determine the data base
+address and therefore the value of GP of the initial module is specific
+to the individual OS or other executive runtime and therefore beyond the
+scope of this specification.  Possibilities include passing suitable
+information via the initial stack, such as in the auxiliary vector,
+preinitializing a processor register, providing a system call to retrieve
+it, etc.
+
+The presence of a separate text base address and a data base address also
+means that ET_EXEC images cannot be supported with the FDPIC psABI as it
+is not possible to make multiple copies of such image's data segment in a
+no-MMU system without the ability to relocate it at load time.
+
+
+5.2 Lazy Binding (normative)
+
+Lazy binding can be optionally implemented by the dynamic loader.  If it
+is implemented, then the run-time relocation of R_RISCV_JUMP_SLOT and
+their associated R_RISCV_GP relocations present in the FDT is done in two
+stages.
+
+In the first stage, which is done by the dynamic loader at the time a
+module is loaded, R_RISCV_JUMP_SLOT and R_RISCV_GP relocations are
+resolved respectively to the address of the lazy resolver and the value
+of the global pointer associated with the module providing the lazy
+resolver.
+
+In the second stage, which is done when the lazy resolver is reached by
+means of making a call through an FDT entry referring to it,
+R_RISCV_JUMP_SLOT and R_RISCV_GP relocations are resolved respectively
+to the address of the function symbol associated with the FDT entry and
+the value of the global pointer associated with the module providing the
+function symbol.  To be able to do its work the lazy resolver is called
+with certain registers containing values as follows:
+
+* x3 (gp) holds the dynamic loader's GP value as with an ordinary FDT
+  entry (this is a consequence of the first stage of run-time relocation)
+
+* x5 (t0) holds a pointer to the FDT entry to relocate
+
+* x6 (t1) holds the caller's GP value
+
+Registers have been assigned such as to work with the RV32E instruction
+set as well.
+
+Upon completion of the second stage the lazy resolver makes a jump to the
+newly resolved address of the function symbol.
+
+
+5.3 Example PLT Code (informative)
+
+@PLT:
+  l[w|d] t2, 0(t0)
+  mv     t1, gp
+  l[w|d] gp, [4|8](t0)
+  jr     t2
+fun1@PLT:
+  lui    t0, %gprel_hi(FDT[fun1])
+  addi   t0, %gprel_lo(FDT[fun1])
+  add    t0, gp
+  j      @PLT
+fun2@PLT:
+  lui    t0, %gprel_hi(FDT[fun2])
+  addi   t0, %gprel_lo(FDT[fun2])
+  add    t0, gp
+  j      @PLT
