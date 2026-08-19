@@ -1613,7 +1613,7 @@ Relaxation result:
 --
 
 NOTE: Using address of PLT stubs of the target symbol or address target symbol
-directly will resolve by linker according to the visibility of the target
+directly will resolve by linker according to the properties of the target
 symbol.
 
 ==== Function Call Relaxation (Far)
@@ -1644,12 +1644,12 @@ Relaxation candidate:
 Relaxation result:
 [,asm]
 ----
-    jfal  0            # R_RISCV_JAL (symbol)
+    jfal  <offset-between-pc-and-PLT-or-func>
 ----
 --
 
 NOTE: Using address of PLT stubs of the target symbol or address target symbol
-directly will resolve by linker according to the visibility of the target
+directly will resolve by linker according to the properties of the target
 symbol.
 
 [[compress-func-call-relax]]
